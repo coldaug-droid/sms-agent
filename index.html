@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #080A0E; color: #E8EAF0; font-family: 'IBM Plex Mono', 'Courier New', monospace; min-height: 100vh; }
@@ -16,6 +17,12 @@
 </head>
 <body>
   <div id="root"></div>
+  <script>
+    // Supabase credentials — set these to your actual values from Supabase Settings > API Keys
+    // After uploading to GitHub, these will be your real project credentials
+    window.SUPABASE_URL = "https://ekgnifrsuymovlhhnodh.supabase.co";
+    window.SUPABASE_ANON_KEY = "sb_publishable_z097n7-YAs7WnC3Pu_gejA_QnuVJbKI";
+  </script>
   <script type="text/babel">
     const { useState, useRef } = React;
 
@@ -55,24 +62,38 @@
 
     const inputStyle = { background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, padding:"10px 14px", fontSize:13, width:"100%", outline:"none" };
 
-    // ── Login ──────────────────────────────────────────────────────
-    const DEMO_USERS = [
-      { id:"1", email:"admin@youragency.com", password:"admin123", name:"Agency Admin", role:"admin" },
-      { id:"2", email:"client@example.com",   password:"client123", name:"Sarah Johnson", role:"client", business:"Sarah's Realty" },
-    ];
+    // ── Supabase Auth ──────────────────────────────────────────
+    const SUPABASE_URL = document.querySelector('meta[name="supabase-url"]')?.content || "";
+    const SUPABASE_KEY = document.querySelector('meta[name="supabase-key"]')?.content || "";
+
+    // Initialize Supabase client from CDN global
+    const supabaseClient = supabase.createClient(
+      window.SUPABASE_URL || "REPLACE_WITH_YOUR_URL",
+      window.SUPABASE_ANON_KEY || "REPLACE_WITH_YOUR_KEY"
+    );
+
+    // Admin emails — add yours here
+    const ADMIN_EMAILS = ["admin@youragency.com"];
 
     function LoginScreen({ onLogin }) {
       const [email, setEmail] = useState("");
       const [password, setPassword] = useState("");
       const [error, setError] = useState("");
       const [loading, setLoading] = useState(false);
+
       const submit = async () => {
         setLoading(true); setError("");
-        await new Promise(r => setTimeout(r, 500));
-        const found = DEMO_USERS.find(u => u.email===email && u.password===password);
-        if (found) { onLogin(found); } else { setError("Invalid email or password."); }
+        try {
+          const { data, error: authError } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (authError) { setError(authError.message); setLoading(false); return; }
+          const role = ADMIN_EMAILS.includes(email) ? "admin" : "client";
+          onLogin({ id: data.user.id, email, name: email.split("@")[0], role });
+        } catch(e) {
+          setError("Login failed. Please try again.");
+        }
         setLoading(false);
       };
+
       return (
         <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <div style={{ width:400, padding:24 }}>
@@ -83,13 +104,16 @@
             </div>
             <Card>
               <Label>Email</Label>
-              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={{...inputStyle, marginBottom:16}} />
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&submit()}
+                placeholder="you@example.com" style={{...inputStyle, marginBottom:16}} />
               <Label>Password</Label>
-              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...inputStyle, marginBottom:16}} />
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&submit()}
+                placeholder="••••••••" style={{...inputStyle, marginBottom:16}} />
               {error && <div style={{ color:t.danger, fontSize:12, marginBottom:14, padding:"8px 12px", background:t.danger+"15", borderRadius:6 }}>{error}</div>}
               <Btn onClick={submit} disabled={loading} style={{ width:"100%" }}>{loading?"Signing in…":"Sign In →"}</Btn>
             </Card>
-            <div style={{ textAlign:"center", marginTop:16, color:t.muted, fontSize:11 }}>Demo: admin@youragency.com / admin123</div>
           </div>
         </div>
       );
@@ -459,11 +483,37 @@
 
     // ── Root ──────────────────────────────────────────────────────
     function App() {
-      const [user, setUser] = useState(() => {
-        try { return JSON.parse(localStorage.getItem("sms_agent_user")); } catch { return null; }
-      });
-      const login = (u) => { setUser(u); localStorage.setItem("sms_agent_user", JSON.stringify(u)); };
-      const logout = () => { setUser(null); localStorage.removeItem("sms_agent_user"); };
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      React.useEffect(() => {
+        // Check for existing session on load
+        supabaseClient.auth.getSession().then(({ data: { session } }) => {
+          if (session) {
+            const email = session.user.email;
+            const role = ADMIN_EMAILS.includes(email) ? "admin" : "client";
+            setUser({ id: session.user.id, email, name: email.split("@")[0], role });
+          }
+          setLoading(false);
+        });
+        // Listen for auth changes
+        const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+          if (!session) setUser(null);
+        });
+        return () => subscription.unsubscribe();
+      }, []);
+
+      const login = (u) => setUser(u);
+      const logout = async () => {
+        await supabaseClient.auth.signOut();
+        setUser(null);
+      };
+
+      if (loading) return (
+        <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:t.muted, fontSize:13 }}>
+          Loading…
+        </div>
+      );
       if (!user) return <LoginScreen onLogin={login} />;
       if (user.role==="admin") return <AdminDashboard user={user} logout={logout} />;
       return <ClientDashboard user={user} logout={logout} />;
