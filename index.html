@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lead SMS Agent</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #080A0E; color: #E8EAF0; font-family: 'IBM Plex Mono', 'Courier New', monospace; min-height: 100vh; }
+    input, select, textarea, button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef } = React;
+
+    const t = {
+      bg: "#080A0E", card: "#0F1218", border: "#1A1F2E",
+      accent: "#00C896", accentDim: "#00C89615",
+      text: "#E8EAF0", muted: "#5A6478", danger: "#FF4D6D",
+      warning: "#F59E0B",
+    };
+
+    function Btn({ onClick, disabled, variant="primary", children, style, size="md" }) {
+      const pad = size==="sm" ? "7px 14px" : "11px 22px";
+      const fs = size==="sm" ? 12 : 13;
+      const colors = {
+        primary: { background: t.accent, color: "#000", border: "none" },
+        ghost:   { background: "transparent", color: t.accent, border: `1px solid ${t.accent}44` },
+        danger:  { background: t.danger+"22", color: t.danger, border: `1px solid ${t.danger}44` },
+      };
+      return <button onClick={onClick} disabled={disabled} style={{
+        ...colors[variant], borderRadius:8, padding:pad, fontWeight:700, fontSize:fs,
+        cursor: disabled?"not-allowed":"pointer", opacity: disabled?0.5:1,
+        transition:"all 0.15s", letterSpacing:"0.03em", ...style
+      }}>{children}</button>;
+    }
+
+    function Card({ children, style }) {
+      return <div style={{ background:t.card, border:`1px solid ${t.border}`, borderRadius:12, padding:24, ...style }}>{children}</div>;
+    }
+
+    function Badge({ color=t.accent, children }) {
+      return <span style={{ background:color+"22", color, border:`1px solid ${color}44`, borderRadius:4, fontSize:11, fontWeight:700, padding:"2px 8px", letterSpacing:"0.06em", textTransform:"uppercase" }}>{children}</span>;
+    }
+
+    function Label({ children }) {
+      return <div style={{ fontSize:11, color:t.muted, fontWeight:700, letterSpacing:"0.08em", marginBottom:6, textTransform:"uppercase" }}>{children}</div>;
+    }
+
+    const inputStyle = { background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, padding:"10px 14px", fontSize:13, width:"100%", outline:"none" };
+
+    // ── Login ──────────────────────────────────────────────────────
+    const DEMO_USERS = [
+      { id:"1", email:"admin@youragency.com", password:"admin123", name:"Agency Admin", role:"admin" },
+      { id:"2", email:"client@example.com",   password:"client123", name:"Sarah Johnson", role:"client", business:"Sarah's Realty" },
+    ];
+
+    function LoginScreen({ onLogin }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(false);
+      const submit = async () => {
+        setLoading(true); setError("");
+        await new Promise(r => setTimeout(r, 500));
+        const found = DEMO_USERS.find(u => u.email===email && u.password===password);
+        if (found) { onLogin(found); } else { setError("Invalid email or password."); }
+        setLoading(false);
+      };
+      return (
+        <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ width:400, padding:24 }}>
+            <div style={{ textAlign:"center", marginBottom:36 }}>
+              <div style={{ fontSize:40, marginBottom:12 }}>⚡</div>
+              <div style={{ fontWeight:700, fontSize:20, color:t.accent, letterSpacing:"0.05em" }}>LEAD SMS AGENT</div>
+              <div style={{ color:t.muted, fontSize:12, marginTop:4 }}>Sign in to your account</div>
+            </div>
+            <Card>
+              <Label>Email</Label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={{...inputStyle, marginBottom:16}} />
+              <Label>Password</Label>
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...inputStyle, marginBottom:16}} />
+              {error && <div style={{ color:t.danger, fontSize:12, marginBottom:14, padding:"8px 12px", background:t.danger+"15", borderRadius:6 }}>{error}</div>}
+              <Btn onClick={submit} disabled={loading} style={{ width:"100%" }}>{loading?"Signing in…":"Sign In →"}</Btn>
+            </Card>
+            <div style={{ textAlign:"center", marginTop:16, color:t.muted, fontSize:11 }}>Demo: admin@youragency.com / admin123</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Admin ──────────────────────────────────────────────────────
+    function AdminDashboard({ user, logout }) {
+      const clients = [
+        { id:"2", name:"Sarah Johnson", business:"Sarah's Realty", plan:"$10/mo", status:"active", campaigns:3, lastActive:"Today" },
+        { id:"3", name:"Mike Torres", business:"Torres Insurance", plan:"$10/mo", status:"active", campaigns:1, lastActive:"2 days ago" },
+        { id:"4", name:"Jenny Park", business:"Park Wellness", plan:"$10/mo", status:"pending", campaigns:0, lastActive:"Never" },
+      ];
+      return (
+        <div style={{ minHeight:"100vh" }}>
+          <div style={{ borderBottom:`1px solid ${t.border}`, padding:"16px 32px", display:"flex", alignItems:"center", gap:16 }}>
+            <div style={{ fontWeight:700, fontSize:16, color:t.accent, letterSpacing:"0.05em" }}>⚡ LEAD SMS AGENT</div>
+            <Badge color="#8B5CF6">ADMIN</Badge>
+            <div style={{ marginLeft:"auto", display:"flex", gap:12, alignItems:"center" }}>
+              <span style={{ color:t.muted, fontSize:12 }}>{user.name}</span>
+              <Btn onClick={logout} variant="ghost" size="sm">Sign Out</Btn>
+            </div>
+          </div>
+          <div style={{ maxWidth:900, margin:"0 auto", padding:"32px 24px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:32 }}>
+              {[["Active Clients","3",t.accent],["MRR","$30",t.accent],["Campaigns Run","4",t.text],["SMS Sent","847",t.text]].map(([label,val,color])=>(
+                <Card key={label} style={{ textAlign:"center", padding:20 }}>
+                  <div style={{ fontSize:28, fontWeight:700, color }}>{val}</div>
+                  <div style={{ fontSize:11, color:t.muted, marginTop:4 }}>{label.toUpperCase()}</div>
+                </Card>
+              ))}
+            </div>
+            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>Client Accounts</h2>
+            <Card style={{ padding:0, overflow:"hidden" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                <thead>
+                  <tr style={{ borderBottom:`1px solid ${t.border}` }}>
+                    {["Client","Business","Plan","Campaigns","Last Active","Status"].map(h=>(
+                      <th key={h} style={{ padding:"12px 16px", textAlign:"left", color:t.muted, fontWeight:700, fontSize:11 }}>{h.toUpperCase()}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map((c,i)=>(
+                    <tr key={c.id} style={{ borderBottom: i<clients.length-1 ? `1px solid ${t.border}` : "none" }}>
+                      <td style={{ padding:"14px 16px", fontWeight:600 }}>{c.name}</td>
+                      <td style={{ padding:"14px 16px", color:t.muted }}>{c.business}</td>
+                      <td style={{ padding:"14px 16px" }}>{c.plan}</td>
+                      <td style={{ padding:"14px 16px" }}>{c.campaigns}</td>
+                      <td style={{ padding:"14px 16px", color:t.muted }}>{c.lastActive}</td>
+                      <td style={{ padding:"14px 16px" }}><Badge color={c.status==="active"?t.accent:t.warning}>{c.status}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Client SMS Tool ────────────────────────────────────────────
+    async function callClaude(prompt) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:500,
+          system:"Write short warm SMS messages for business outreach. Return only the message text, no quotes.",
+          messages:[{ role:"user", content:prompt }] })
+      });
+      const data = await res.json();
+      return data.content?.[0]?.text?.trim() || "";
+    }
+
+    function ClientDashboard({ user, logout }) {
+      const [step, setStep] = useState(1);
+      const [leads, setLeads] = useState([]);
+      const [headers, setHeaders] = useState([]);
+      const [mapping, setMapping] = useState({ name:"", phone:"", email:"" });
+      const [template, setTemplate] = useState("Hi {name}! Just wanted to reach out — I think we'd be a great fit. Would love to connect when you have a moment! 😊");
+      const [messages, setMessages] = useState([]);
+      const [aiThinking, setAiThinking] = useState(false);
+      const [aiSuggestion, setAiSuggestion] = useState("");
+      const [sending, setSending] = useState(false);
+      const [sendLog, setSendLog] = useState([]);
+      const [campaigns, setCampaigns] = useState([
+        { id:1, date:"Mar 8", name:"Spring Leads", sent:24 },
+        { id:2, date:"Feb 22", name:"Feb Follow-up", sent:17 },
+      ]);
+      const [activeTab, setActiveTab] = useState("campaign");
+      const fileRef = useRef();
+
+      const handleFile = (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const wb = XLSX.read(ev.target.result, { type:"binary" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
+          if (rows.length < 2) return;
+          const hdrs = rows[0].map(String);
+          const data = rows.slice(1).filter(r=>r.some(Boolean)).map(r => {
+            const obj = {}; hdrs.forEach((h,i) => obj[h]=r[i]??""); return obj;
+          });
+          setHeaders(hdrs); setLeads(data);
+          const lower = hdrs.map(h=>h.toLowerCase());
+          setMapping({
+            name:  hdrs[lower.findIndex(h=>h.includes("name")||h.includes("first"))] || "",
+            phone: hdrs[lower.findIndex(h=>h.includes("phone")||h.includes("mobile")||h.includes("cell"))] || "",
+            email: hdrs[lower.findIndex(h=>h.includes("email"))] || "",
+          });
+          setStep(2);
+        };
+        reader.readAsBinaryString(file);
+      };
+
+      const suggestMessage = async () => {
+        setAiThinking(true);
+        const sample = leads.slice(0,3).map(l=>l[mapping.name]||"someone").join(", ");
+        const text = await callClaude(`I run "${user.business||"my business"}" and need to text leads like: ${sample}. Write a warm SMS under 160 chars. Use {name} as placeholder.`);
+        setAiSuggestion(text); setAiThinking(false);
+      };
+
+      const buildPreviews = () => {
+        setMessages(leads.map(lead => {
+          const name = String(lead[mapping.name]||"").split(" ")[0] || "there";
+          const phone = String(lead[mapping.phone]||"").replace(/\D/g,"");
+          return { name:lead[mapping.name]||"—", phone, msg:template.replace(/\{name\}/gi,name), status:"pending" };
+        }));
+        setStep(4);
+      };
+
+      const sendAll = async () => {
+        setSending(true); const log = [];
+        for (let i=0; i<messages.length; i++) {
+          await new Promise(r=>setTimeout(r,300));
+          const m = messages[i];
+          log.push({ ...m, status: m.phone.length>=10 ? "sent" : "failed" });
+          setSendLog([...log]);
+        }
+        setSending(false);
+        setCampaigns(p=>[{ id:Date.now(), date:"Today", name:"New Campaign", sent:log.filter(l=>l.status==="sent").length },...p]);
+        setStep(5);
+      };
+
+      const reset = () => { setStep(1); setLeads([]); setMessages([]); setSendLog([]); setAiSuggestion(""); };
+      const sent = sendLog.filter(l=>l.status==="sent").length;
+      const failed = sendLog.filter(l=>l.status==="failed").length;
+
+      const stepLabels = ["Upload","Map","Compose","Preview","Done"];
+
+      return (
+        <div style={{ minHeight:"100vh", display:"flex" }}>
+          {/* Sidebar */}
+          <div style={{ width:220, borderRight:`1px solid ${t.border}`, padding:"24px 16px", flexShrink:0, display:"flex", flexDirection:"column" }}>
+            <div style={{ fontWeight:700, fontSize:13, color:t.accent, letterSpacing:"0.05em", marginBottom:4 }}>⚡ SMS AGENT</div>
+            <div style={{ fontSize:11, color:t.muted, marginBottom:28 }}>{user.business||"Client Portal"}</div>
+            {[["🚀","New Campaign","campaign"],["📋","Past Campaigns","history"],["⚙️","Settings","settings"]].map(([icon,label,tab])=>(
+              <button key={tab} onClick={()=>{setActiveTab(tab); if(tab==="campaign") setStep(1);}} style={{
+                display:"flex", alignItems:"center", gap:10, padding:"9px 12px", borderRadius:8,
+                border:"none", cursor:"pointer", marginBottom:4, fontFamily:"inherit",
+                background: activeTab===tab ? t.accentDim : "transparent",
+                color: activeTab===tab ? t.accent : t.muted,
+                fontSize:13, fontWeight: activeTab===tab ? 700 : 400, textAlign:"left"
+              }}>{icon} {label}</button>
+            ))}
+            <div style={{ marginTop:"auto", paddingTop:16, borderTop:`1px solid ${t.border}` }}>
+              <div style={{ fontSize:11, color:t.muted, marginBottom:8 }}>{user.name}</div>
+              <Btn onClick={logout} variant="ghost" size="sm" style={{ width:"100%" }}>Sign Out</Btn>
+            </div>
+          </div>
+
+          {/* Main */}
+          <div style={{ flex:1, padding:32, overflowY:"auto" }}>
+
+            {activeTab==="campaign" && step<=5 && (
+              <div style={{ display:"flex", gap:8, marginBottom:32 }}>
+                {stepLabels.map((label,i)=>(
+                  <div key={i} style={{ flex:1 }}>
+                    <div style={{ height:3, borderRadius:2, background:(i+1)<=step?t.accent:t.border, marginBottom:4, transition:"background 0.3s" }} />
+                    <div style={{ fontSize:10, color:(i+1)<=step?t.accent:t.muted, letterSpacing:"0.06em" }}>{label.toUpperCase()}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Step 1 */}
+            {activeTab==="campaign" && step===1 && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:6 }}>New Campaign</h2>
+                <p style={{ color:t.muted, fontSize:13, marginBottom:28 }}>Upload your leads spreadsheet to get started.</p>
+                <div onClick={()=>fileRef.current.click()} style={{ border:`2px dashed ${t.border}`, borderRadius:12, padding:"52px 32px", textAlign:"center", cursor:"pointer", background:t.card }}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor=t.border}>
+                  <div style={{ fontSize:42, marginBottom:12 }}>📊</div>
+                  <div style={{ fontWeight:700, marginBottom:6 }}>Drop your spreadsheet here</div>
+                  <div style={{ color:t.muted, fontSize:12 }}>Excel (.xlsx) or CSV — with name, phone, email columns</div>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display:"none" }} />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2 */}
+            {activeTab==="campaign" && step===2 && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:6 }}>Map Your Columns</h2>
+                <p style={{ color:t.muted, fontSize:13, marginBottom:24 }}>Found <strong style={{ color:t.accent }}>{leads.length} leads</strong>. Confirm which columns are which.</p>
+                <Card style={{ marginBottom:24 }}>
+                  {[["name","👤 Name column"],["phone","📱 Phone column"],["email","✉️ Email (optional)"]].map(([field,label])=>(
+                    <div key={field} style={{ display:"flex", alignItems:"center", gap:16, marginBottom:14 }}>
+                      <div style={{ width:150, fontSize:13, color:t.muted, flexShrink:0 }}>{label}</div>
+                      <select value={mapping[field]} onChange={e=>setMapping(p=>({...p,[field]:e.target.value}))}
+                        style={{...inputStyle, flex:1}}>
+                        <option value="">— not mapped —</option>
+                        {headers.map(h=><option key={h} value={h}>{h}</option>)}
+                      </select>
+                      {mapping[field] && <Badge color={t.accent}>✓</Badge>}
+                    </div>
+                  ))}
+                </Card>
+                <div style={{ display:"flex", gap:12 }}>
+                  <Btn onClick={()=>setStep(1)} variant="ghost">← Back</Btn>
+                  <Btn onClick={()=>setStep(3)} disabled={!mapping.name||!mapping.phone}>Continue →</Btn>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3 */}
+            {activeTab==="campaign" && step===3 && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:6 }}>Write Your Message</h2>
+                <p style={{ color:t.muted, fontSize:13, marginBottom:24 }}>
+                  Use <code style={{ color:t.accent, background:t.accentDim, padding:"1px 6px", borderRadius:4 }}>{"{name}"}</code> to personalize.
+                </p>
+                <Card style={{ marginBottom:16 }}>
+                  <textarea value={template} onChange={e=>setTemplate(e.target.value)} rows={4}
+                    style={{...inputStyle, resize:"vertical"}} />
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10 }}>
+                    <span style={{ color:template.length>160?t.warning:t.muted, fontSize:12 }}>
+                      {template.replace(/\{name\}/g,"Name").length} chars{template.length>160?" · ⚠ may send as 2 SMS":" · fits 1 SMS"}
+                    </span>
+                    <Btn onClick={suggestMessage} disabled={aiThinking} variant="ghost" size="sm">
+                      {aiThinking?"✨ Writing…":"✨ AI Suggest"}
+                    </Btn>
+                  </div>
+                  {aiSuggestion && (
+                    <div style={{ marginTop:14, background:t.bg, border:`1px solid ${t.accent}44`, borderRadius:8, padding:14 }}>
+                      <Label>AI SUGGESTION</Label>
+                      <div style={{ fontSize:13, marginBottom:10 }}>{aiSuggestion}</div>
+                      <Btn size="sm" onClick={()=>{ setTemplate(aiSuggestion); setAiSuggestion(""); }}>Use this ↑</Btn>
+                    </div>
+                  )}
+                </Card>
+                <div style={{ display:"flex", gap:12 }}>
+                  <Btn onClick={()=>setStep(2)} variant="ghost">← Back</Btn>
+                  <Btn onClick={buildPreviews} disabled={!template.trim()}>Preview {leads.length} Messages →</Btn>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4 */}
+            {activeTab==="campaign" && step===4 && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:6 }}>Review & Send</h2>
+                <p style={{ color:t.muted, fontSize:13, marginBottom:24 }}><strong style={{ color:t.accent }}>{messages.length} messages</strong> ready.</p>
+                <div style={{ maxHeight:360, overflowY:"auto", display:"flex", flexDirection:"column", gap:8, marginBottom:24 }}>
+                  {messages.slice(0,10).map((m,i)=>(
+                    <Card key={i} style={{ padding:14 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                        <span style={{ fontWeight:700, fontSize:13 }}>{m.name}</span>
+                        <span style={{ color:m.phone.length>=10?t.muted:t.danger, fontSize:12, fontFamily:"monospace" }}>{m.phone||"⚠ no phone"}</span>
+                      </div>
+                      <div style={{ fontSize:12, color:t.muted, lineHeight:1.6 }}>{m.msg}</div>
+                    </Card>
+                  ))}
+                  {messages.length>10 && <div style={{ textAlign:"center", color:t.muted, fontSize:12 }}>+ {messages.length-10} more…</div>}
+                </div>
+                <div style={{ display:"flex", gap:12 }}>
+                  <Btn onClick={()=>setStep(3)} variant="ghost">← Edit</Btn>
+                  <Btn onClick={sendAll} disabled={sending}>
+                    {sending?`Sending… ${sendLog.length}/${messages.length}`:`🚀 Send ${messages.length} Messages`}
+                  </Btn>
+                </div>
+              </div>
+            )}
+
+            {/* Step 5 */}
+            {activeTab==="campaign" && step===5 && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:20 }}>Campaign Complete ✓</h2>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:28 }}>
+                  {[["Sent",sent,t.accent],["Failed",failed,failed>0?t.danger:t.muted],["Success Rate",`${Math.round((sent/sendLog.length)*100)}%`,t.text]].map(([label,val,color])=>(
+                    <Card key={label} style={{ textAlign:"center", padding:20 }}>
+                      <div style={{ fontSize:30, fontWeight:700, color }}>{val}</div>
+                      <div style={{ fontSize:11, color:t.muted, marginTop:4 }}>{label.toUpperCase()}</div>
+                    </Card>
+                  ))}
+                </div>
+                <div style={{ maxHeight:280, overflowY:"auto", display:"flex", flexDirection:"column", gap:6, marginBottom:24 }}>
+                  {sendLog.map((l,i)=>(
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 14px", background:t.card, borderRadius:8, border:`1px solid ${t.border}`, fontSize:12 }}>
+                      <span style={{ color:l.status==="sent"?t.accent:t.danger }}>{l.status==="sent"?"✓":"✗"}</span>
+                      <span style={{ flex:1, fontWeight:600 }}>{l.name}</span>
+                      <span style={{ color:t.muted, fontFamily:"monospace" }}>{l.phone}</span>
+                      <Badge color={l.status==="sent"?t.accent:t.danger}>{l.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+                <Btn onClick={reset}>↩ New Campaign</Btn>
+              </div>
+            )}
+
+            {/* History */}
+            {activeTab==="history" && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:24 }}>Past Campaigns</h2>
+                <Card style={{ padding:0, overflow:"hidden" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                    <thead>
+                      <tr style={{ borderBottom:`1px solid ${t.border}` }}>
+                        {["Date","Campaign","Sent","Status"].map(h=>(
+                          <th key={h} style={{ padding:"12px 16px", textAlign:"left", color:t.muted, fontWeight:700, fontSize:11 }}>{h.toUpperCase()}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaigns.map((c,i)=>(
+                        <tr key={c.id} style={{ borderBottom:i<campaigns.length-1?`1px solid ${t.border}`:"none" }}>
+                          <td style={{ padding:"12px 16px", color:t.muted }}>{c.date}</td>
+                          <td style={{ padding:"12px 16px", fontWeight:600 }}>{c.name}</td>
+                          <td style={{ padding:"12px 16px" }}>{c.sent}</td>
+                          <td style={{ padding:"12px 16px" }}><Badge color={t.accent}>complete</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+              </div>
+            )}
+
+            {/* Settings */}
+            {activeTab==="settings" && (
+              <div>
+                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:24 }}>Account Settings</h2>
+                <Card style={{ marginBottom:20 }}>
+                  <Label>Business Name</Label>
+                  <input defaultValue={user.business||""} style={{...inputStyle, marginBottom:16}} />
+                  <Label>Your Name</Label>
+                  <input defaultValue={user.name} style={{...inputStyle}} />
+                </Card>
+                <Card>
+                  <div style={{ fontWeight:700, marginBottom:4 }}>📡 Twilio Configuration</div>
+                  <div style={{ fontSize:12, color:t.muted, marginBottom:16 }}>Your SMS provider credentials.</div>
+                  <Label>Account SID</Label>
+                  <input placeholder="ACxxxxxxxxxxxxxxxx" style={{...inputStyle, marginBottom:12}} />
+                  <Label>Auth Token</Label>
+                  <input type="password" placeholder="••••••••••••••••" style={{...inputStyle, marginBottom:12}} />
+                  <Label>From Phone Number</Label>
+                  <input placeholder="+1xxxxxxxxxx" style={{...inputStyle, marginBottom:16}} />
+                  <Btn size="sm">Save Credentials</Btn>
+                </Card>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    // ── Root ──────────────────────────────────────────────────────
+    function App() {
+      const [user, setUser] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("sms_agent_user")); } catch { return null; }
+      });
+      const login = (u) => { setUser(u); localStorage.setItem("sms_agent_user", JSON.stringify(u)); };
+      const logout = () => { setUser(null); localStorage.removeItem("sms_agent_user"); };
+      if (!user) return <LoginScreen onLogin={login} />;
+      if (user.role==="admin") return <AdminDashboard user={user} logout={logout} />;
+      return <ClientDashboard user={user} logout={logout} />;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
