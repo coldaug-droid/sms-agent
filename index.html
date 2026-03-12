@@ -118,24 +118,41 @@
 
     // ── Admin ──────────────────────────────────────────────────────
     function AdminDashboard({ user, logout }) {
-      const clients = [
-        { id:"2", name:"Sarah Johnson", business:"Sarah's Realty", plan:"$10/mo", status:"active", campaigns:3, lastActive:"Today" },
-        { id:"3", name:"Mike Torres", business:"Torres Insurance", plan:"$10/mo", status:"active", campaigns:1, lastActive:"2 days ago" },
-        { id:"4", name:"Jenny Park", business:"Park Wellness", plan:"$10/mo", status:"pending", campaigns:0, lastActive:"Never" },
-      ];
+      const [clients, setClients] = React.useState([]);
+      const [loadingClients, setLoadingClients] = React.useState(true);
+
+      React.useEffect(() => {
+        supabaseClient
+          .from("client_profiles")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .then(({ data, error }) => {
+            if (data) setClients(data);
+            setLoadingClients(false);
+          });
+      }, []);
+
+      const activeCount = clients.filter(c => c.status === "active").length;
+      const mrr = activeCount * 10;
+
       return (
         <div style={{ minHeight:"100vh" }}>
           <div style={{ borderBottom:`1px solid ${t.border}`, padding:"16px 32px", display:"flex", alignItems:"center", gap:16 }}>
             <div style={{ fontWeight:700, fontSize:16, color:t.accent, letterSpacing:"0.05em" }}>⚡ LEAD SMS AGENT</div>
             <Badge color="#8B5CF6">ADMIN</Badge>
             <div style={{ marginLeft:"auto", display:"flex", gap:12, alignItems:"center" }}>
-              <span style={{ color:t.muted, fontSize:12 }}>{user.name}</span>
+              <span style={{ color:t.muted, fontSize:12 }}>{user.email}</span>
               <Btn onClick={logout} variant="ghost" size="sm">Sign Out</Btn>
             </div>
           </div>
           <div style={{ maxWidth:900, margin:"0 auto", padding:"32px 24px" }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:32 }}>
-              {[["Active Clients","3",t.accent],["MRR","$30",t.accent],["Campaigns Run","4",t.text],["SMS Sent","847",t.text]].map(([label,val,color])=>(
+              {[
+                ["Active Clients", activeCount, t.accent],
+                ["MRR", `$${mrr}`, t.accent],
+                ["Total Clients", clients.length, t.text],
+                ["Monthly/Client", "$10", t.text],
+              ].map(([label,val,color])=>(
                 <Card key={label} style={{ textAlign:"center", padding:20 }}>
                   <div style={{ fontSize:28, fontWeight:700, color }}>{val}</div>
                   <div style={{ fontSize:11, color:t.muted, marginTop:4 }}>{label.toUpperCase()}</div>
@@ -144,27 +161,32 @@
             </div>
             <h2 style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>Client Accounts</h2>
             <Card style={{ padding:0, overflow:"hidden" }}>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                <thead>
-                  <tr style={{ borderBottom:`1px solid ${t.border}` }}>
-                    {["Client","Business","Plan","Campaigns","Last Active","Status"].map(h=>(
-                      <th key={h} style={{ padding:"12px 16px", textAlign:"left", color:t.muted, fontWeight:700, fontSize:11 }}>{h.toUpperCase()}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map((c,i)=>(
-                    <tr key={c.id} style={{ borderBottom: i<clients.length-1 ? `1px solid ${t.border}` : "none" }}>
-                      <td style={{ padding:"14px 16px", fontWeight:600 }}>{c.name}</td>
-                      <td style={{ padding:"14px 16px", color:t.muted }}>{c.business}</td>
-                      <td style={{ padding:"14px 16px" }}>{c.plan}</td>
-                      <td style={{ padding:"14px 16px" }}>{c.campaigns}</td>
-                      <td style={{ padding:"14px 16px", color:t.muted }}>{c.lastActive}</td>
-                      <td style={{ padding:"14px 16px" }}><Badge color={c.status==="active"?t.accent:t.warning}>{c.status}</Badge></td>
+              {loadingClients ? (
+                <div style={{ padding:24, color:t.muted, fontSize:13 }}>Loading clients…</div>
+              ) : clients.length === 0 ? (
+                <div style={{ padding:24, color:t.muted, fontSize:13 }}>No clients yet. Add clients in Supabase → Authentication → Users, then insert a row in client_profiles.</div>
+              ) : (
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                  <thead>
+                    <tr style={{ borderBottom:`1px solid ${t.border}` }}>
+                      {["Client","Business","Plan","Status","Added"].map(h=>(
+                        <th key={h} style={{ padding:"12px 16px", textAlign:"left", color:t.muted, fontWeight:700, fontSize:11 }}>{h.toUpperCase()}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {clients.map((c,i)=>(
+                      <tr key={c.id} style={{ borderBottom: i<clients.length-1 ? `1px solid ${t.border}` : "none" }}>
+                        <td style={{ padding:"14px 16px", fontWeight:600 }}>{c.full_name || "—"}</td>
+                        <td style={{ padding:"14px 16px", color:t.muted }}>{c.business_name || "—"}</td>
+                        <td style={{ padding:"14px 16px" }}>{c.plan || "$10/mo"}</td>
+                        <td style={{ padding:"14px 16px" }}><Badge color={c.status==="active"?t.accent:t.warning}>{c.status}</Badge></td>
+                        <td style={{ padding:"14px 16px", color:t.muted, fontSize:12 }}>{new Date(c.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </Card>
           </div>
         </div>
