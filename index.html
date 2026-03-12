@@ -63,17 +63,14 @@
     const inputStyle = { background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, color:t.text, padding:"10px 14px", fontSize:13, width:"100%", outline:"none" };
 
     // ── Supabase Auth ──────────────────────────────────────────
-    const SUPABASE_URL = document.querySelector('meta[name="supabase-url"]')?.content || "";
-    const SUPABASE_KEY = document.querySelector('meta[name="supabase-key"]')?.content || "";
-
-    // Initialize Supabase client from CDN global
+    // Initialize Supabase client — reads credentials set in window before this script
     const supabaseClient = supabase.createClient(
-      window.SUPABASE_URL || "REPLACE_WITH_YOUR_URL",
-      window.SUPABASE_ANON_KEY || "REPLACE_WITH_YOUR_KEY"
+      window.SUPABASE_URL,
+      window.SUPABASE_ANON_KEY
     );
 
     // Admin emails — add yours here
-    const ADMIN_EMAILS = ["admin@youragency.com"];
+    const ADMIN_EMAILS = ["col.daug@gmail.com"];
 
     function LoginScreen({ onLogin }) {
       const [email, setEmail] = useState("");
@@ -523,4 +520,3 @@
   </script>
 </body>
 </html>
- 
