@@ -205,6 +205,61 @@
       return data.content?.[0]?.text?.trim() || "";
     }
 
+    function SettingsTab({ user, inputStyle, supabaseClient }) {
+      const [sid, setSid] = React.useState("");
+      const [token, setToken] = React.useState("");
+      const [from, setFrom] = React.useState("");
+      const [saved, setSaved] = React.useState(false);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        supabaseClient
+          .from("client_profiles")
+          .select("twilio_sid, twilio_token, twilio_from")
+          .eq("user_id", user.id)
+          .single()
+          .then(({ data }) => {
+            if (data) {
+              setSid(data.twilio_sid || "");
+              setToken(data.twilio_token || "");
+              setFrom(data.twilio_from || "");
+            }
+            setLoading(false);
+          });
+      }, []);
+
+      const save = async () => {
+        const { error } = await supabaseClient
+          .from("client_profiles")
+          .update({ twilio_sid: sid, twilio_token: token, twilio_from: from })
+          .eq("user_id", user.id);
+        if (!error) { setSaved(true); setTimeout(() => setSaved(false), 3000); }
+        else alert("Save failed: " + error.message);
+      };
+
+      if (loading) return <div style={{ color:t.muted, fontSize:13 }}>Loading…</div>;
+
+      return (
+        <div>
+          <h2 style={{ fontSize:20, fontWeight:700, marginBottom:24 }}>Account Settings</h2>
+          <Card>
+            <div style={{ fontWeight:700, marginBottom:4 }}>📡 Twilio Configuration</div>
+            <div style={{ fontSize:12, color:t.muted, marginBottom:16 }}>Enter the credentials from your Twilio dashboard.</div>
+            <Label>Account SID</Label>
+            <input value={sid} onChange={e=>setSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" style={{...inputStyle, marginBottom:12}} />
+            <Label>Auth Token</Label>
+            <input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="••••••••••••••••••••••••••••••••" style={{...inputStyle, marginBottom:12}} />
+            <Label>From Phone Number</Label>
+            <input value={from} onChange={e=>setFrom(e.target.value)} placeholder="+13035551234" style={{...inputStyle, marginBottom:16}} />
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <Btn size="sm" onClick={save}>Save Credentials</Btn>
+              {saved && <span style={{ color:t.accent, fontSize:12 }}>✓ Saved!</span>}
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
     function ClientDashboard({ user, logout }) {
       const [step, setStep] = useState(1);
       const [leads, setLeads] = useState([]);
@@ -264,15 +319,57 @@
       };
 
       const sendAll = async () => {
-        setSending(true); const log = [];
-        for (let i=0; i<messages.length; i++) {
-          await new Promise(r=>setTimeout(r,300));
-          const m = messages[i];
-          log.push({ ...m, status: m.phone.length>=10 ? "sent" : "failed" });
-          setSendLog([...log]);
+        const { data: profile } = await supabaseClient
+          .from("client_profiles")
+          .select("twilio_sid, twilio_token, twilio_from")
+          .eq("user_id", user.id)
+          .single();
+
+        if (!profile?.twilio_sid || !profile?.twilio_token || !profile?.twilio_from) {
+          alert("Please save your Twilio credentials in Settings before sending.");
+          setActiveTab("settings");
+          return;
         }
+
+        setSending(true);
+        const log = [];
+
+        for (let i = 0; i < messages.length; i++) {
+          const m = messages[i];
+          if (m.phone.length < 10) {
+            log.push({ ...m, status: "failed", error: "invalid phone" });
+            setSendLog([...log]);
+            continue;
+          }
+          try {
+            const res = await fetch("/api/send-sms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                to: "+1" + m.phone.replace(/\D/g,"").slice(-10),
+                from: profile.twilio_from,
+                body: m.msg,
+                accountSid: profile.twilio_sid,
+                authToken: profile.twilio_token,
+              })
+            });
+            const result = await res.json();
+            log.push({ ...m, status: result.success ? "sent" : "failed", error: result.error || "" });
+          } catch(e) {
+            log.push({ ...m, status: "failed", error: "network error" });
+          }
+          setSendLog([...log]);
+          await new Promise(r => setTimeout(r, 200));
+        }
+
         setSending(false);
-        setCampaigns(p=>[{ id:Date.now(), date:"Today", name:"New Campaign", sent:log.filter(l=>l.status==="sent").length },...p]);
+        await supabaseClient.from("campaigns").insert({
+          user_id: user.id,
+          name: "Campaign " + new Date().toLocaleDateString(),
+          sent_count: log.filter(l => l.status === "sent").length,
+          failed_count: log.filter(l => l.status === "failed").length,
+        });
+        setCampaigns(p => [{ id: Date.now(), date: "Today", name: "New Campaign", sent: log.filter(l=>l.status==="sent").length }, ...p]);
         setStep(5);
       };
 
@@ -473,26 +570,7 @@
 
             {/* Settings */}
             {activeTab==="settings" && (
-              <div>
-                <h2 style={{ fontSize:20, fontWeight:700, marginBottom:24 }}>Account Settings</h2>
-                <Card style={{ marginBottom:20 }}>
-                  <Label>Business Name</Label>
-                  <input defaultValue={user.business||""} style={{...inputStyle, marginBottom:16}} />
-                  <Label>Your Name</Label>
-                  <input defaultValue={user.name} style={{...inputStyle}} />
-                </Card>
-                <Card>
-                  <div style={{ fontWeight:700, marginBottom:4 }}>📡 Twilio Configuration</div>
-                  <div style={{ fontSize:12, color:t.muted, marginBottom:16 }}>Your SMS provider credentials.</div>
-                  <Label>Account SID</Label>
-                  <input placeholder="ACxxxxxxxxxxxxxxxx" style={{...inputStyle, marginBottom:12}} />
-                  <Label>Auth Token</Label>
-                  <input type="password" placeholder="••••••••••••••••" style={{...inputStyle, marginBottom:12}} />
-                  <Label>From Phone Number</Label>
-                  <input placeholder="+1xxxxxxxxxx" style={{...inputStyle, marginBottom:16}} />
-                  <Btn size="sm">Save Credentials</Btn>
-                </Card>
-              </div>
+              <SettingsTab user={user} inputStyle={inputStyle} supabaseClient={supabaseClient} />
             )}
 
           </div>
